@@ -16,6 +16,10 @@ module BabySqueel
           (::ActiveRecord::VERSION::MAJOR == 7 && ::ActiveRecord::VERSION::MINOR >= 2)
       end
 
+      def self.at_least_8_0?
+        ::ActiveRecord::VERSION::MAJOR >= 8
+      end
+
     end
   end
 end

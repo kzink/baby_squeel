@@ -1,3 +1,5 @@
+require 'baby_squeel/active_record/version_helper'
+
 module BabySqueel
   class Calculation # :nodoc:
     attr_reader :node
@@ -15,24 +17,45 @@ module BabySqueel
     # caching because the alias would have a unique name every
     # time.
     def to_s
-      case node
-      when Arel::Attributes::Attribute
-        # Simple attribute case - handle this specifically to avoid the struct.map issue
-        "#{node.relation.name}_#{node.name}"
-      when Array
-        # Handle array of nodes
-        names = node.map do |child|
-          if child.kind_of?(String) || child.kind_of?(Symbol)
-            child.to_s
-          elsif child.respond_to?(:name)
-            child.name.to_s
+      if BabySqueel::ActiveRecord::VersionHelper.at_least_8_0?
+        # Rails 8 compatibility - handle Arel nodes without database connection
+        case node
+        when Arel::Attributes::Attribute
+          # Simple attribute case - handle this specifically to avoid the struct.map issue
+          "#{node.relation.name}_#{node.name}"
+        when Array
+          # Handle array of nodes
+          names = node.map do |child|
+            if child.kind_of?(String) || child.kind_of?(Symbol)
+              child.to_s
+            elsif child.respond_to?(:name)
+              child.name.to_s
+            end
           end
+          names.compact.uniq.join('_')
+        else
+          # For complex expressions, try to extract meaningful parts
+          # without calling to_sql which requires a database connection
+          extract_node_name(node)
         end
-        names.compact.uniq.join('_')
-      else
-        # For complex expressions, try to extract meaningful parts
-        # without calling to_sql which requires a database connection
+      elsif ::ActiveRecord::VERSION::MAJOR > 7 || (::ActiveRecord::VERSION::MAJOR == 7 && ::ActiveRecord::VERSION::MINOR >= 2)
+        # Rails 7.2+ - need to handle binary expressions differently
         extract_node_name(node)
+      else
+        # Rails < 7.2 - use original logic
+        if node.respond_to?(:map)
+          names = node.map do |child|
+            if child.kind_of?(String) || child.kind_of?(Symbol)
+              child.to_s
+            elsif child.respond_to?(:name)
+              child.name.to_s
+            end
+          end
+          names.compact.uniq.join('_')
+        else
+          # fix for https://github.com/rails/rails/commit/fc38ff6e4417295c870f419f7c164ab5a7dbc4a5
+          node.to_sql.split('"').map { |v| v.tr('^A-Za-z0-9_', '').presence }.compact.uniq.join('_')
+        end
       end
     end
 
